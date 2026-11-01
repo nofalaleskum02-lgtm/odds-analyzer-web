@@ -2,31 +2,39 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
-      error: "Gunakan metode POST."
-    });
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    return res.status(500).json({
-      error: "GEMINI_API_KEY belum dipasang di Vercel."
+      error: "Metode tidak diizinkan. Gunakan POST."
     });
   }
 
   try {
-    const { images, competition, homeOverride, awayOverride } =
-      req.body || {};
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: "API Key Gemini belum dipasang di Vercel."
+      });
+    }
+
+    const body = typeof req.body === "string"
+      ? JSON.parse(req.body)
+      : req.body || {};
+
+    const {
+      images,
+      competition,
+      homeOverride,
+      awayOverride
+    } = body;
 
     if (!Array.isArray(images) || images.length === 0) {
       return res.status(400).json({
-        error: "Silakan pilih screenshot pertandingan."
+        error: "Pilih minimal satu screenshot."
       });
     }
 
     if (images.length > 10) {
       return res.status(400).json({
-        error: "Maksimal 10 screenshot dalam satu analisis."
+        error: "Maksimal 10 screenshot."
       });
     }
 
@@ -36,38 +44,47 @@ export default async function handler(req, res) {
       "image/webp"
     ];
 
-    const imageParts = images.map((img, index) => {
+    const imageParts = [];
+
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+
       if (
         !img ||
         !allowedTypes.includes(img.mimeType) ||
         typeof img.base64 !== "string"
       ) {
-        throw new Error(
-          `Format screenshot nomor ${index + 1} tidak valid.`
-        );
+        return res.status(400).json({
+          error: `Format screenshot nomor ${i + 1} tidak valid.`
+        });
       }
 
-      const base64 = img.base64.replace(
-        /^data:image\/[^;]+;base64,/,
-        ""
-      );
+      const base64 = img.base64.replace(/\s/g, "");
 
       if (
         !base64 ||
-        !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(base64) ||
+        base64.length % 4 !== 0
       ) {
-        throw new Error(
-          `Data gambar nomor ${index + 1} tidak valid.`
-        );
+        return res.status(400).json({
+          error: `Data screenshot nomor ${i + 1} rusak.`
+        });
       }
 
-      return {
+      // Batas sekitar 3 MB per gambar.
+      if (base64.length > 4 * 1024 * 1024) {
+        return res.status(413).json({
+          error: `Screenshot nomor ${i + 1} terlalu besar.`
+        });
+      }
+
+      imageParts.push({
         inlineData: {
           mimeType: img.mimeType,
           data: base64
         }
-      };
-    });
+      });
+    }
 
     const prompt = `
 KAMU ADALAH FOOTBALL ANALYST AI.
@@ -85,22 +102,24 @@ TUJUAN:
 Menganalisis screenshot odds sepak bola secara teliti,
 objektif, transparan dan konservatif.
 
-KOMPETISI:
-${competition || "Tidak diketahui"}
+WILAYAH KOMPETISI:
+Eropa dan Amerika, termasuk kompetisi antarklub
+dan liga domestik.
 
-TIM KANDIDAT:
+DATA PERTANDINGAN:
+Kompetisi: ${competition || "Tidak disebutkan"}
 Tuan rumah: ${homeOverride || "Baca dari screenshot"}
-Tamu: ${awayOverride || "Baca dari screenshot"}
+Tim tamu: ${awayOverride || "Baca dari screenshot"}
 
-ATURAN WAJIB OCR:
-1. Periksa seluruh gambar yang dikirim.
+ATURAN OCR:
+1. Periksa semua screenshot yang diberikan.
 2. Baca angka persis seperti yang terlihat.
-3. Jangan mengubah angka odds.
-4. Jangan menebak angka yang buram.
-5. Jika tidak terbaca, tulis TIDAK TERBACA.
-6. Bedakan odds pembukaan dan odds terbaru jika tersedia.
-7. Jangan mencampur data dari pertandingan berbeda.
-8. Jika ada gambar yang tidak relevan, jelaskan.
+3. Jangan mengubah atau menebak angka odds.
+4. Angka buram wajib ditulis TIDAK TERBACA.
+5. Jangan mencampur data pertandingan berbeda.
+6. Pisahkan data screenshot dan hasil perhitungan.
+7. Jika ada screenshot yang tidak relevan, jelaskan.
+8. Jangan menganggap data yang tidak terlihat sebagai fakta.
 
 PASAR YANG DIPERIKSA:
 - 1X2
@@ -116,77 +135,74 @@ PASAR YANG DIPERIKSA:
 - Team Total
 
 ANALISIS:
-1. Identifikasi pertandingan dan kompetisi.
-2. Ekstrak seluruh data odds yang terbaca.
-3. Hitung probabilitas implisit dari odds desimal jika datanya lengkap.
-4. Jelaskan margin bookmaker jika memungkinkan.
-5. Analisis pergerakan odds hanya jika tersedia data pembanding.
-6. Nilai konsistensi antar pasar.
-7. Identifikasi risiko dan kemungkinan jebakan pasar.
-8. Jangan menyatakan value bet tanpa dasar probabilitas yang memadai.
-9. Jangan mengarang statistik, cedera, susunan pemain atau performa tim.
-10. Data statistik eksternal yang tidak tersedia harus ditulis:
-    BELUM ADA DATA.
-11. Jika data tidak cukup, pilih SKIP.
-12. Jangan menjanjikan kemenangan atau akurasi tertentu.
+1. Identifikasi nama tim dan kompetisi.
+2. Ekstrak semua odds yang terbaca.
+3. Hitung probabilitas implisit dari odds desimal jika tersedia.
+4. Hitung margin bookmaker jika data lengkap.
+5. Bandingkan odds hanya jika tersedia data pembanding.
+6. Periksa konsistensi antar pasar.
+7. Jangan mengarang statistik performa tim.
+8. Jangan mengarang cedera atau susunan pemain.
+9. Statistik eksternal yang tidak tersedia tulis BELUM ADA DATA.
+10. Jangan menyebut value bet tanpa dasar probabilitas independen.
+11. Jika data kurang, pilih SKIP.
+12. Tidak ada jaminan kemenangan.
 
-FORMAT JAWABAN:
+FORMAT HASIL:
 
 A. IDENTITAS PERTANDINGAN
 - Kompetisi
-- Tanggal dan waktu
+- Tanggal dan waktu jika terlihat
 - Tuan rumah
 - Tim tamu
 
-B. HASIL PEMBACAAN SCREENSHOT
-Buat daftar seluruh odds yang terbaca.
-Pisahkan berdasarkan jenis pasar.
-Tandai data buram sebagai TIDAK TERBACA.
+B. DATA SCREENSHOT
+Daftar odds berdasarkan jenis pasar.
+Tandai angka buram TIDAK TERBACA.
 
 C. PEMERIKSAAN DATA
-- Data yang tersedia
-- Data yang tidak tersedia
-- Kesalahan atau ketidaksesuaian gambar
+- Data tersedia
+- Data tidak tersedia
+- Ketidaksesuaian screenshot
 
 D. ANALISIS ODDS
 - 1X2
 - Asian Handicap
 - Over / Under
 - BTTS
-- Pasar lainnya jika tersedia
+- Pasar lainnya
 
 E. PROBABILITAS DAN VALUE
 - Probabilitas implisit
 - Margin bookmaker jika bisa dihitung
-- Estimasi probabilitas independen hanya jika ada dasar data
-- Expected Value jika probabilitas independen tersedia
+- Probabilitas independen hanya jika ada dasar
+- Expected Value hanya jika datanya cukup
 
 F. ANALISIS RISIKO
-- Risiko rendah / sedang / tinggi
-- Alasan
-- Indikasi pasar yang tidak konsisten
-- Potensi jebakan bandar
+- Rendah / sedang / tinggi
+- Alasan risiko
+- Ketidaksesuaian pasar
+- Potensi jebakan pasar
 
 G. KESIMPULAN
-Pilih salah satu:
-BET
-SKIP
+Pilih BET atau SKIP.
+Jelaskan alasan dan pasar yang dianalisis.
+Jika data tidak cukup, wajib SKIP.
 
-Sertakan alasan yang jelas.
-Jika data tidak cukup atau tidak meyakinkan, wajib SKIP.
+H. KUALITAS ANALISIS
+Jelaskan keterbatasan data dan tingkat keyakinan
+secara kualitatif. Jangan membuat persentase palsu.
 
-H. TINGKAT KEYAKINAN
-Jelaskan kualitas data dan keterbatasan analisis.
-Jangan memberikan persentase keyakinan palsu.
-
-PENTING:
-Jangan pernah mengarang data untuk melengkapi analisis.
-Utamakan keselamatan modal daripada memaksakan pilihan taruhan.
+ATURAN AKHIR:
+Jangan mengarang data untuk melengkapi analisis.
+Utamakan perlindungan modal daripada memaksakan taruhan.
 `;
 
+    const apiUrl =
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
-        encodeURIComponent(apiKey),
+      apiUrl + "?key=" + encodeURIComponent(apiKey),
       {
         method: "POST",
         headers: {
@@ -213,12 +229,12 @@ Utamakan keselamatan modal daripada memaksakan pilihan taruhan.
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Gemini API error:", data);
+      console.error("Gemini error:", data);
 
       return res.status(502).json({
         error:
           data?.error?.message ||
-          "AI gagal memproses screenshot."
+          "Gemini gagal memproses analisis."
       });
     }
 
@@ -231,7 +247,7 @@ Utamakan keselamatan modal daripada memaksakan pilihan taruhan.
 
     if (!result) {
       return res.status(502).json({
-        error: "AI tidak menghasilkan jawaban."
+        error: "AI tidak menghasilkan hasil analisis."
       });
     }
 
@@ -242,7 +258,7 @@ Utamakan keselamatan modal daripada memaksakan pilihan taruhan.
     });
 
   } catch (error) {
-    console.error("Analysis error:", error);
+    console.error("Server error:", error);
 
     return res.status(500).json({
       error: error.message || "Terjadi kesalahan server."
