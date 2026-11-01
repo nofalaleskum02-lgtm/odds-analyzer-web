@@ -1,0 +1,275 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Football Odds Analyzer AI</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #101522;
+      color: #f1f5f9;
+      font-family: Arial, sans-serif;
+    }
+    .container {
+      max-width: 720px;
+      margin: auto;
+    }
+    h1 { color: #54d6a0; }
+    .card {
+      background: #1c2638;
+      border: 1px solid #35445c;
+      border-radius: 12px;
+      padding: 18px;
+      margin: 16px 0;
+    }
+    label {
+      display: block;
+      margin: 14px 0 7px;
+      font-weight: bold;
+    }
+    input, select {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #52617a;
+      background: #111a2a;
+      color: white;
+      font-size: 15px;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 15px;
+      border: 0;
+      border-radius: 9px;
+      background: #16a36b;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    button:disabled {
+      opacity: .5;
+    }
+    .preview {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .preview-item {
+      background: #111a2a;
+      padding: 8px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .preview img {
+      width: 100%;
+      border-radius: 6px;
+    }
+    .preview button {
+      background: #b83232;
+      padding: 8px;
+      font-size: 13px;
+      margin-top: 5px;
+    }
+    #result {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.6;
+    }
+    .note {
+      color: #b6c3d6;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>⚽ Football Odds Analyzer AI</h1>
+  <p>Analisis screenshot odds sepak bola dengan bantuan AI.</p>
+
+  <div class="card">
+    <h3>Data Pertandingan</h3>
+
+    <label for="competition">Kompetisi</label>
+    <input id="competition" placeholder="Contoh: UEFA Champions League">
+
+    <label for="home">Tim tuan rumah</label>
+    <input id="home" placeholder="Nama tim tuan rumah">
+
+    <label for="away">Tim tamu</label>
+    <input id="away" placeholder="Nama tim tamu">
+
+    <label for="images">Pilih screenshot odds (maksimal 10)</label>
+    <input
+      id="images"
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      multiple
+    >
+
+    <p id="counter" class="note">Belum ada gambar dipilih.</p>
+    <div id="preview" class="preview"></div>
+
+    <p class="note">
+      Format gambar: JPG, PNG, atau WEBP.
+      Pastikan angka odds terlihat jelas.
+    </p>
+
+    <button id="analyze">ANALISIS PERTANDINGAN</button>
+  </div>
+
+  <div class="card">
+    <h3>📊 Hasil Analisis</h3>
+    <p id="status" class="note">Menunggu screenshot untuk dianalisis.</p>
+    <div id="result"></div>
+  </div>
+
+  <p class="note">
+    Catatan: Analisis AI bukan jaminan kemenangan.
+    Jika data tidak cukup, utamakan keputusan SKIP.
+  </p>
+
+</div>
+
+<script>
+  const imageInput = document.getElementById("images");
+  const preview = document.getElementById("preview");
+  const counter = document.getElementById("counter");
+  const statusText = document.getElementById("status");
+  const result = document.getElementById("result");
+  const analyzeButton = document.getElementById("analyze");
+
+  let selectedImages = [];
+
+  imageInput.addEventListener("change", function () {
+    const files = Array.from(this.files || []);
+
+    if (selectedImages.length + files.length > 10) {
+      alert("Maksimal 10 screenshot.");
+      this.value = "";
+      return;
+    }
+
+    for (const file of files) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+        alert("Gunakan gambar JPG, PNG, atau WEBP.");
+        continue;
+      }
+
+      selectedImages.push(file);
+    }
+
+    this.value = "";
+    showPreview();
+  });
+
+  function showPreview() {
+    preview.innerHTML = "";
+
+    selectedImages.forEach((file, index) => {
+      const item = document.createElement("div");
+      item.className = "preview-item";
+
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(file);
+      img.alt = "Screenshot " + (index + 1);
+
+      const name = document.createElement("p");
+      name.textContent = file.name;
+      name.className = "note";
+
+      const remove = document.createElement("button");
+      remove.textContent = "Hapus gambar";
+      remove.type = "button";
+      remove.onclick = () => {
+        selectedImages.splice(index, 1);
+        showPreview();
+      };
+
+      item.append(img, name, remove);
+      preview.appendChild(item);
+    });
+
+    counter.textContent =
+      selectedImages.length + " dari 10 screenshot dipilih.";
+  }
+
+  function readImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        const base64 = String(reader.result).split(",")[1];
+
+        resolve({
+          mimeType: file.type,
+          base64
+        });
+      };
+
+      reader.onerror = () => reject(
+        new Error("Gagal membaca " + file.name)
+      );
+
+      reader.readAsDataURL(file);
+    });
+  }
+
+  analyzeButton.addEventListener("click", async () => {
+    if (selectedImages.length === 0) {
+      alert("Pilih screenshot terlebih dahulu.");
+      return;
+    }
+
+    analyzeButton.disabled = true;
+    statusText.textContent = "Sedang mengirim screenshot ke AI...";
+    result.textContent = "";
+
+    try {
+      const images = await Promise.all(
+        selectedImages.map(readImage)
+      );
+
+      statusText.textContent = "AI sedang menganalisis. Mohon tunggu...";
+
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          images,
+          competition: document.getElementById("competition").value,
+          homeOverride: document.getElementById("home").value,
+          awayOverride: document.getElementById("away").value
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Analisis gagal.");
+      }
+
+      result.textContent = data.result;
+      statusText.textContent =
+        "Analisis selesai. " + data.imagesAnalyzed +
+        " screenshot diproses.";
+
+    } catch (error) {
+      statusText.textContent = "Analisis gagal.";
+      result.textContent = error.message;
+    } finally {
+      analyzeButton.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
