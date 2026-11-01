@@ -199,7 +199,7 @@ Utamakan perlindungan modal daripada memaksakan taruhan.
 `;
 
     const apiUrl =
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent";
 
     const response = await fetch(
       apiUrl + "?key=" + encodeURIComponent(apiKey),
