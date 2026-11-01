@@ -229,13 +229,18 @@ Utamakan perlindungan modal daripada memaksakan taruhan.
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Gemini error:", data);
+  console.error("Gemini error status:", response.status);
 
-      return res.status(502).json({
-        error:
-          data?.error?.message ||
-          "Gemini gagal memproses analisis."
-      });
+  console.error(
+    "Gemini error detail:",
+    JSON.stringify(data, null, 2)
+  );
+
+  return res.status(response.status).json({
+    success: false,
+    error: data?.error?.message || "Gemini API gagal",
+    status: response.status
+  });
     }
 
     const result = (
