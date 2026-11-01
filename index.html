@@ -201,26 +201,47 @@
       selectedImages.length + " dari 10 screenshot dipilih.";
   }
 
-  function readImage(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+  
+async function readImage(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
 
-      reader.onload = () => {
-        const base64 = String(reader.result).split(",")[1];
+    const maxWidth = 1600;
+    const scale = Math.min(1, maxWidth / bitmap.width);
 
-        resolve({
-          mimeType: file.type,
-          base64
-        });
-      };
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
 
-      reader.onerror = () => reject(
-        new Error("Gagal membaca " + file.name)
-      );
+    const ctx = canvas.getContext("2d");
 
-      reader.readAsDataURL(file);
-    });
+    ctx.drawImage(
+      bitmap,
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    bitmap.close();
+
+    const compressed = canvas.toDataURL(
+      "image/jpeg",
+      0.82
+    );
+
+    return {
+      mimeType: "image/jpeg",
+      base64: compressed.split(",")[1]
+    };
+
+  } catch (error) {
+    throw new Error(
+      "Gagal mengecilkan gambar: " + file.name
+    );
   }
+}
+  
 
   analyzeButton.addEventListener("click", async () => {
     if (selectedImages.length === 0) {
